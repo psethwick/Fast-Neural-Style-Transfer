@@ -1,19 +1,12 @@
 from torchvision import transforms
 import torch
 import numpy as np
-import av
 
 # Mean and standard deviation used for pre-trained PyTorch models
 mean = np.array([0.485, 0.456, 0.406])
 std = np.array([0.229, 0.224, 0.225])
 
 
-def extract_frames(video_path):
-    """ Extracts frames from video """
-    frames = []
-    video = av.open(video_path)
-    for frame in video.decode(0):
-        yield frame.to_image()
 
 
 def gram_matrix(y):
