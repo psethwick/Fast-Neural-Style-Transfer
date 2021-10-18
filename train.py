@@ -12,6 +12,23 @@ from torchvision import datasets
 from torchvision.utils import save_image
 from models import TransformerNet, VGG16
 from utils import *
+#from matplotlib import pyplot as plt
+from IPython.display import Image as DisplayImage
+
+class ImageFolderWithPaths(datasets.ImageFolder):
+    """Custom dataset that includes image file paths. Extends
+    torchvision.datasets.ImageFolder
+    """
+
+    # override the __getitem__ method. this is the method that dataloader calls
+    def __getitem__(self, index):
+        # this is what ImageFolder normally returns 
+        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
+        # the image file path
+        path = self.imgs[index][0]
+        # make a new tuple that includes original and the path
+        tuple_with_path = (original_tuple + (path,))
+        return tuple_with_path
 
 def train(dataset_path, style_image="style-images/mosaic.jpg", epochs=1, batch_size=4, image_size=256, style_size=256, \
          lambda_content=1e5, lambda_style=1e10, lr=1e-3, checkpoint_model=None, checkpoint_interval=2000, sample_interval=1000):
@@ -31,13 +48,13 @@ def train(dataset_path, style_image="style-images/mosaic.jpg", epochs=1, batch_s
   # = parser.parse_)
 
     style_name = style_image.split("/")[-1].split(".")[0]
-    os.makedirs("images/outputs/"+style_name+"training", exist_ok=True)
+    os.makedirs("images/outputs/"+style_name+"-training", exist_ok=True)
     os.makedirs("checkpoints", exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Create dataloader for the training data
-    train_dataset = datasets.ImageFolder(dataset_path, train_transform(image_size))
+    train_dataset = ImageFolderWithPaths(dataset_path, train_transform(image_size))
     dataloader = DataLoader(train_dataset, batch_size=batch_size)
 
     # Defines networks
@@ -73,17 +90,22 @@ def train(dataset_path, style_image="style-images/mosaic.jpg", epochs=1, batch_s
         with torch.no_grad():
             output = transformer(image_samples.to(device))
         image_grid = denormalize(torch.cat((image_samples.cpu(), output.cpu()), 2))
-        save_image(image_grid, "images/outputs/"+style_name+"-training/"+batches_done+".jpg", nrow=4)
+ 
+        image_path = "images/outputs/"+style_name+"-training/"+str(batches_done)+".jpg"
+        save_image(image_grid, image_path, nrow=4)
+        #plt.show(image_grid)
+        DisplayImage(image_path)
         transformer.train()
 
     for epoch in range(epochs):
         epoch_metrics = {"content": [], "style": [], "total": []}
-        for batch_i, (images, _) in enumerate(dataloader):
+        for batch_i, (images, _, paths) in enumerate(dataloader):
             optimizer.zero_grad()
 
             images_original = images.to(device)
             images_transformed = transformer(images_original)
 
+            # sys.stdout.write("\n".join(paths))
             # Extract features
             features_original = vgg(images_original)
             features_transformed = vgg(images_transformed)
@@ -112,7 +134,7 @@ def train(dataset_path, style_image="style-images/mosaic.jpg", epochs=1, batch_s
                     epoch + 1,
                     epochs,
                     batch_i,
-                    len(train_dataset),
+                    len(train_dataset)/batch_size,
                     content_loss.item(),
                     np.mean(epoch_metrics["content"]),
                     style_loss.item(),
@@ -128,4 +150,4 @@ def train(dataset_path, style_image="style-images/mosaic.jpg", epochs=1, batch_s
 
             if checkpoint_interval > 0 and batches_done % checkpoint_interval == 0:
                 style_name = os.path.basename(style_image).split(".")[0]
-                torch.save(transformer.state_dict(), "checkpoints/"+style_name+"_"+batches_done+".pth")
+                torch.save(transformer.state_dict(), "checkpoints/"+style_name+"_"+str(batches_done)+".pth")
